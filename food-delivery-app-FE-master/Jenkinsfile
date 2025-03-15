@@ -21,17 +21,25 @@ pipeline {
 
     stage('Install Dependencies') {
       steps {
-        dir('food-delivery-app-FE-master') {
-          sh 'npm install'
-        }
+        // First, let's check the directory structure
+        sh '''
+          pwd
+          ls -la
+          echo "Current directory contents:"
+          ls -R
+        '''
+        
+        // Try without the food-delivery-app-FE-master directory
+        sh '''
+          npm install
+          ls -la
+        '''
       }
     }
 
     stage('Build Project') {
       steps {
-        dir('food-delivery-app-FE-master') {
-          sh 'npm run build'
-        }
+        sh 'npm run build'
       }
     }
 
@@ -40,19 +48,17 @@ pipeline {
         withCredentials([usernamePassword(credentialsId: 'DOCKER_HUB_CREDENTIALS', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
           sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
           
-          dir('food-delivery-app-FE-master') {
-            // Add .dockerignore if not exists
-            sh '''
-              echo "node_modules" > .dockerignore
-              echo "dist" >> .dockerignore
-            '''
-            
-            sh 'docker build -t raghuuppar/frontend:${VERSION} --no-cache .'
-            sh 'docker push raghuuppar/frontend:${VERSION}'
-            
-            // Clean up after push
-            sh 'docker rmi raghuuppar/frontend:${VERSION} || true'
-          }
+          // Add .dockerignore if not exists
+          sh '''
+            echo "node_modules" > .dockerignore
+            echo "dist" >> .dockerignore
+          '''
+          
+          sh 'docker build -t raghuuppar/frontend:${VERSION} --no-cache .'
+          sh 'docker push raghuuppar/frontend:${VERSION}'
+          
+          // Clean up after push
+          sh 'docker rmi raghuuppar/frontend:${VERSION} || true'
         }
       }
     }
