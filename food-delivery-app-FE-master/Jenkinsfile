@@ -19,27 +19,41 @@ pipeline {
       }
     }
 
-    stage('Install Dependencies') {
+    stage('Checkout') {
       steps {
-        // First, let's check the directory structure
+        // Explicitly checkout the repository
+        git branch: 'main',
+            url: 'https://github.com/raghvendru/Restaurant-Frontend-app.git'
+        
+        // Debug: Check what was checked out
         sh '''
           pwd
           ls -la
-          echo "Current directory contents:"
+          echo "===== Repository contents ====="
           ls -R
         '''
-        
-        // Try without the food-delivery-app-FE-master directory
-        sh '''
-          npm install
-          ls -la
-        '''
+      }
+    }
+
+    stage('Install Dependencies') {
+      steps {
+        // Navigate to the correct directory
+        dir('food-delivery-app-FE-master') {
+          sh '''
+            echo "===== Current directory ====="
+            pwd
+            ls -la
+            npm install
+          '''
+        }
       }
     }
 
     stage('Build Project') {
       steps {
-        sh 'npm run build'
+        dir('food-delivery-app-FE-master') {
+          sh 'npm run build'
+        }
       }
     }
 
@@ -48,17 +62,16 @@ pipeline {
         withCredentials([usernamePassword(credentialsId: 'DOCKER_HUB_CREDENTIALS', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
           sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
           
-          // Add .dockerignore if not exists
-          sh '''
-            echo "node_modules" > .dockerignore
-            echo "dist" >> .dockerignore
-          '''
-          
-          sh 'docker build -t raghuuppar/frontend:${VERSION} --no-cache .'
-          sh 'docker push raghuuppar/frontend:${VERSION}'
-          
-          // Clean up after push
-          sh 'docker rmi raghuuppar/frontend:${VERSION} || true'
+          dir('food-delivery-app-FE-master') {
+            sh '''
+              echo "node_modules" > .dockerignore
+              echo "dist" >> .dockerignore
+              
+              docker build -t raghuuppar/frontend:${VERSION} --no-cache .
+              docker push raghuuppar/frontend:${VERSION}
+              docker rmi raghuuppar/frontend:${VERSION} || true
+            '''
+          }
         }
       }
     }
@@ -67,18 +80,13 @@ pipeline {
       steps {
         withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GITHUB_USER', passwordVariable: 'GITHUB_TOKEN')]) {
           sh '''
-            # Configure Git
             git config --global user.email "raghavendruppar@gmail.com"
             git config --global user.name "raghavendru"
 
-            # Clone using HTTPS with token
             git clone "https://${GITHUB_USER}:${GITHUB_TOKEN}@github.com/raghvendru/Restaurant-Service.git"
             cd Restaurant-Service
 
-            # Update manifest
             sed -i "s|image:.*|image: raghuuppar/frontend:${VERSION}|" deployment-folder/aws/angular-manifest.yml
-
-            # Push changes
             git add deployment-folder/aws/angular-manifest.yml
             git commit -m "Update image tag for version ${VERSION}"
             git push origin main
