@@ -1,19 +1,25 @@
 pipeline {
   agent any
 
-tools {
+  tools {
     nodejs "Nodejs"
-}
+  }
 
- environment {
+  environment {
     DOCKER_REGISTRY = "docker.io"
     DOCKERHUB_CREDENTIALS = credentials('DOCKER_HUB_CREDENTIALS')
     VERSION = "${env.BUILD_ID}"
   }
 
   stages {
+    stage('Cleanup Workspace Before Build') {
+      steps {
+        cleanWs()
+        sh 'docker system prune -af || true'
+      }
+    }
 
- stage('Install Dependencies') {
+    stage('Install Dependencies') {
       steps {
         dir('food-delivery-app-FE-master') {
           sh 'npm install'
@@ -29,51 +35,67 @@ tools {
       }
     }
 
-
-     stage('Docker Build and Push') {
-                 steps {
-                     withCredentials([usernamePassword(credentialsId: 'DOCKER_HUB_CREDENTIALS', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                         sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
-
-                         dir('food-delivery-app-FE-master') {
-                             sh 'docker build -t raghuuppar/frontend:${VERSION} .'
-                             sh 'docker push raghuuppar/frontend:${VERSION}'
-                         }
-                     }
-                 }
-             }
-
-
-     stage('Cleanup Workspace') {
+    stage('Docker Build and Push') {
       steps {
-        deleteDir()
+        withCredentials([usernamePassword(credentialsId: 'DOCKER_HUB_CREDENTIALS', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+          sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+          
+          dir('food-delivery-app-FE-master') {
+            // Add .dockerignore if not exists
+            sh '''
+              echo "node_modules" > .dockerignore
+              echo "dist" >> .dockerignore
+            '''
+            
+            sh 'docker build -t raghuuppar/frontend:${VERSION} --no-cache .'
+            sh 'docker push raghuuppar/frontend:${VERSION}'
+            
+            // Clean up after push
+            sh 'docker rmi raghuuppar/frontend:${VERSION} || true'
+          }
+        }
       }
     }
 
-     stage('Update Image Tag in GitOps') {
-    steps {
+    stage('Update Image Tag in GitOps') {
+      steps {
         withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GITHUB_USER', passwordVariable: 'GITHUB_TOKEN')]) {
-            sh '''
-                # Configure Git
-                git config --global user.email "raghavendruppar@gmail.com"
-                git config --global user.name "raghavendru"
+          sh '''
+            # Configure Git
+            git config --global user.email "raghavendruppar@gmail.com"
+            git config --global user.name "raghavendru"
 
-                # Clone using HTTPS with token
-                git clone "https://${GITHUB_USER}:${GITHUB_TOKEN}@github.com/raghvendru/Restaurant-Service.git"
-                cd Restaurant-Service
+            # Clone using HTTPS with token
+            git clone "https://${GITHUB_USER}:${GITHUB_TOKEN}@github.com/raghvendru/Restaurant-Service.git"
+            cd Restaurant-Service
 
-                # Update manifest
-                sed -i "s|image:.*|image: raghuuppar/frontend:${VERSION}|" deployment-folder/aws/angular-manifest.yml
+            # Update manifest
+            sed -i "s|image:.*|image: raghuuppar/frontend:${VERSION}|" deployment-folder/aws/angular-manifest.yml
 
-                # Push changes
-                git add deployment-folder/aws/angular-manifest.yml
-                git commit -m "Update image tag for version ${VERSION}"
-                git push origin main
-            '''
+            # Push changes
+            git add deployment-folder/aws/angular-manifest.yml
+            git commit -m "Update image tag for version ${VERSION}"
+            git push origin main
+          '''
         }
+      }
     }
-}
+
+    stage('Final Cleanup') {
+      steps {
+        cleanWs()
+        sh '''
+          docker system prune -af || true
+          docker volume prune -f || true
+        '''
+      }
+    }
   }
 
+  post {
+    always {
+      cleanWs()
+    }
+  }
 }
 
