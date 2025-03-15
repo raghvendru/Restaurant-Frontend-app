@@ -7,7 +7,7 @@ tools {
 
  environment {
     DOCKER_REGISTRY = "docker.io"
-    DOCKERHUB_CREDENTIALS = credentials('DOCKER_HUB_CREDENTIAL')
+    DOCKERHUB_CREDENTIALS = credentials('DOCKER_HUB_CREDENTIALS')
     VERSION = "${env.BUILD_ID}"
   }
 
@@ -28,13 +28,18 @@ tools {
     }
 
 
-    stage('Docker Build and Push') {
-      steps {
-          sh 'echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin'
-          sh 'docker build -t codedecode25/food-delivery-app-fe:${VERSION} .'
-          sh 'docker push codedecode25/food-delivery-app-fe:${VERSION}'
-      }
-    }
+     stage('Docker Build and Push') {
+                 steps {
+                     withCredentials([usernamePassword(credentialsId: 'DOCKER_HUB_CREDENTIALS', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                         sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+
+                         dir('Restaurant-Listing') {
+                             sh 'docker build -t raghuuppar/frontend:${VERSION} .'
+                             sh 'docker push raghuuppar/frontend:${VERSION}'
+                         }
+                     }
+                 }
+             }
 
 
      stage('Cleanup Workspace') {
@@ -44,26 +49,29 @@ tools {
     }
 
      stage('Update Image Tag in GitOps') {
-      steps {
-         checkout scmGit(branches: [[name: '*/master']], extensions: [], userRemoteConfigs: [[credentialsId: 'git-ssh', url: 'git@github.com:udemy-dev-withK8s-AWS-codedecode/deployment-folder.git']])
-        script {
-          // Set the new image tag with the Jenkins build number
-       sh '''
-          sed -i "s/image:.*/image: codedecode25\\/food-delivery-app-fe:${VERSION}/" aws/angular-manifest.yml
-        '''
+    steps {
+        withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GITHUB_USER', passwordVariable: 'GITHUB_TOKEN')]) {
+            sh '''
+                # Configure Git
+                git config --global user.email "raghavendruppar@gmail.com"
+                git config --global user.name "raghavendru"
 
-          sh 'git checkout master'
-          sh 'git add .'
-          sh 'git commit -m "Update image tag"'
-        sshagent(['git-ssh'])
-            {
-                  sh('git push')
-            }
+                # Clone using HTTPS with token
+                git clone "https://${GITHUB_USER}:${GITHUB_TOKEN}@github.com/raghvendru/Restaurant-Service.git"
+                cd Restaurant-Service
+
+                # Update manifest
+                sed -i "s|image:.*|image: raghuuppar/frontend:${VERSION}|" deployment-folder/aws/angular-manifest.yml
+
+                # Push changes
+                git add deployment-folder/aws/angular-manifest.yml
+                git commit -m "Update image tag for version ${VERSION}"
+                git push origin main
+            '''
         }
-      }
     }
+}
   }
 
 }
-
 
