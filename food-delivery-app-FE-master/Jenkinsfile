@@ -15,15 +15,17 @@ tools {
 
  stage('Install Dependencies') {
       steps {
-
-        sh 'npm ci'
+        dir('food-delivery-app-FE-master') {
+          sh 'npm install'
+        }
       }
     }
 
     stage('Build Project') {
       steps {
-        // Build the Angular project
-        sh 'npm run build'
+        dir('food-delivery-app-FE-master') {
+          sh 'npm run build'
+        }
       }
     }
 
@@ -33,7 +35,7 @@ tools {
                      withCredentials([usernamePassword(credentialsId: 'DOCKER_HUB_CREDENTIALS', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                          sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
 
-                         dir('Restaurant-Listing') {
+                         dir('food-delivery-app-FE-master') {
                              sh 'docker build -t raghuuppar/frontend:${VERSION} .'
                              sh 'docker push raghuuppar/frontend:${VERSION}'
                          }
